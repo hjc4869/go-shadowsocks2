@@ -58,7 +58,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 			rc.(*net.TCPConn).SetKeepAlive(true)
 			rcshadow := shadow(rc)
 
-			if _, err = rc.Write(tgt); err != nil {
+			if _, err = rcshadow.Write(tgt); err != nil {
 				logf("failed to send target address: %v", err)
 				return
 			}
