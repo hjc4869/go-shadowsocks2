@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"net"
+
 	"github.com/shadowsocks/go-shadowsocks2/socks"
 )
 
@@ -55,7 +56,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 			}
 			defer rc.Close()
 			rc.(*net.TCPConn).SetKeepAlive(true)
-			rc = shadow(rc)
+			rcshadow := shadow(rc)
 
 			if _, err = rc.Write(tgt); err != nil {
 				logf("failed to send target address: %v", err)
@@ -63,7 +64,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 			}
 
 			logf("proxy %s <-> %s <-> %s", c.RemoteAddr(), server, tgt)
-			_, _, err = relay(rc, c)
+			_, _, err = relay(rcshadow, c, rc.(*net.TCPConn), c.(*net.TCPConn))
 			if err != nil {
 				if err, ok := err.(net.Error); ok && err.Timeout() {
 					return // ignore i/o timeout
@@ -93,7 +94,7 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn) {
 		go func() {
 			defer c.Close()
 			c.(*net.TCPConn).SetKeepAlive(true)
-			c = shadow(c)
+			cshadow := shadow(c)
 
 			tgt, err := socks.ReadAddr(c)
 			if err != nil {
@@ -110,7 +111,7 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn) {
 			rc.(*net.TCPConn).SetKeepAlive(true)
 
 			logf("proxy %s <-> %s", c.RemoteAddr(), tgt)
-			_, _, err = relay(c, rc)
+			_, _, err = relay(cshadow, rc, c.(*net.TCPConn), rc.(*net.TCPConn))
 			if err != nil {
 				if err, ok := err.(net.Error); ok && err.Timeout() {
 					return // ignore i/o timeout
@@ -123,32 +124,24 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 // relay copies between left and right bidirectionally. Returns number of
 // bytes copied from right to left, from left to right, and any error occurred.
-func relay(left, right net.Conn) (int64, int64, error) {
+func relay(left, right net.Conn, lefttcp, righttcp *net.TCPConn) (int64, int64, error) {
 	type res struct {
 		N   int64
 		Err error
 	}
 	ch := make(chan res)
-	ltcp, ok := left.(*net.TCPConn)
- 	if !ok {
-		return 0, 0, nil
-	}
-	rtcp, ok := right.(*net.TCPConn)
-	if !ok {
-		return 0, 0, nil
-	}
 
 	go func() {
 		n, err := io.Copy(right, left)
 		if err == nil {
-			err = ltcp.CloseWrite()
+			err = lefttcp.CloseWrite()
 		}
 		ch <- res{n, err}
 	}()
 
 	n, err := io.Copy(left, right)
 	if err == nil {
-		err = rtcp.CloseWrite()
+		err = righttcp.CloseWrite()
 	}
 	rs := <-ch
 
