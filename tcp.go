@@ -3,8 +3,6 @@ package main
 import (
 	"io"
 	"net"
-	"time"
-
 	"github.com/shadowsocks/go-shadowsocks2/socks"
 )
 
@@ -131,17 +129,27 @@ func relay(left, right net.Conn) (int64, int64, error) {
 		Err error
 	}
 	ch := make(chan res)
+	ltcp, ok := left.(*net.TCPConn)
+ 	if !ok {
+		return 0, 0, nil
+	}
+	rtcp, ok := right.(*net.TCPConn)
+	if !ok {
+		return 0, 0, nil
+	}
 
 	go func() {
 		n, err := io.Copy(right, left)
-		right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
-		left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+		if err == nil {
+			err = ltcp.CloseWrite()
+		}
 		ch <- res{n, err}
 	}()
 
 	n, err := io.Copy(left, right)
-	right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
-	left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+	if err == nil {
+		err = rtcp.CloseWrite()
+	}
 	rs := <-ch
 
 	if err == nil {
