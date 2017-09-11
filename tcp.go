@@ -134,14 +134,14 @@ func relay(left, right net.Conn, lefttcp, righttcp *net.TCPConn) (int64, int64, 
 	go func() {
 		n, err := io.Copy(right, left)
 		if err == nil {
-			err = lefttcp.CloseWrite()
+			err = righttcp.CloseWrite()
 		}
 		ch <- res{n, err}
 	}()
 
 	n, err := io.Copy(left, right)
 	if err == nil {
-		err = righttcp.CloseWrite()
+		err = lefttcp.CloseWrite()
 	}
 	rs := <-ch
 
